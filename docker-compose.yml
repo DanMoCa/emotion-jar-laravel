@@ -1,0 +1,137 @@
+version: '3.8'
+
+networks:
+  emotion-network:
+    driver: bridge
+
+services:
+  # Nginx Container
+  nginx:
+    build:
+      context: docker/nginx
+      dockerfile: nginx.Dockerfile
+    container_name: emotion-nginx
+    depends_on:
+      - php
+      - mysql
+#      - redis
+#      - soketi
+#      - scheduler
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/default.conf
+      - ./docker/nginx/log/:/var/log/nginx/
+    networks:
+      - emotion-network
+
+  # App Container
+  php:
+    build:
+      context: docker/php
+      dockerfile: php.Dockerfile
+    ports:
+      - "6001:6001"
+      - "9001:9001"
+    container_name: emotion-jar
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    volumes:
+      - ./:/var/www/html
+#      - ./docker/php/default.conf/php.ini:/usr/local/etc/php/default.conf/local.ini
+#      - ./docker/php/default.conf/error_reporting.ini:/usr/local/etc/php/default.conf/error_reporting.ini
+    networks:
+      - emotion-network
+#    extra_hosts:
+#      - host.docker.internal:host-gateway
+
+
+  composer:
+    image: composer:latest
+    container_name: composer
+    volumes:
+      - ./:/var/www/html
+    working_dir: /var/www/html
+    networks:
+      - emotion-network
+
+  artisan:
+    build:
+      context: docker/php
+      dockerfile: php.Dockerfile
+    container_name: artisan
+    volumes:
+      - ./:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["php","artisan"]
+    networks:
+      - emotion-network
+
+  npm:
+    image: node:current-alpine
+    container_name: npm
+    volumes:
+      - ./:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["npm"]
+    networks:
+      - emotion-network
+
+  mysql:
+    image: mysql
+    container_name: emotion-db
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: '${DB_DATABASE}'
+      MYSQL_USER: '${DB_USERNAME}'
+      MYSQL_PASSWORD: '${DB_PASSWORD}'
+    volumes:
+      - emotion-db:/var/lib/mysql/
+    networks:
+      - emotion-network
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-p${DB_PASSWORD}" ]
+      timeout: 5s
+      retries: 3
+
+#  redis:
+#    image: redis:alpine
+#    container_name: redis
+#    restart: unless-stopped
+#    ports:
+#      - '${FORWARD_REDIS_PORT:-6379}:6379'
+#    volumes:
+#      - 'zoe-redis:/data'
+#    networks:
+#      - emotion-network
+#    healthcheck:
+#      test: ["CMD", "redis-cli", "ping"]
+#      timeout: 5s
+#      retries: 3
+
+#  scheduler:
+#    build:
+#      context: docker/php
+#      dockerfile: php.Dockerfile
+#    container_name: scheduler
+#    restart: unless-stopped
+#    volumes:
+#      - ./:/var/www/html
+#    working_dir: /var/www/html
+#    entrypoint: ["php","artisan","schedule:work"]
+#    networks:
+#      - emotion-network
+
+volumes:
+  emotion-db:
+    driver: local
